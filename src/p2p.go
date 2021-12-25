@@ -4,24 +4,27 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p"
-	connmgr "github.com/libp2p/go-libp2p-connmgr"
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/routing"
 	discovery "github.com/libp2p/go-libp2p-discovery"
 	host "github.com/libp2p/go-libp2p-host"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
+
+	mplex "github.com/libp2p/go-libp2p-mplex"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	tls "github.com/libp2p/go-libp2p-tls"
 	yamux "github.com/libp2p/go-libp2p-yamux"
+	libp2pquic "github.com/libp2p/go-libp2p-quic-transport"
+
 	"github.com/libp2p/go-tcp-transport"
 	"github.com/mr-tron/base58/base58"
-	"github.com/multiformats/go-multiaddr"
 	"github.com/multiformats/go-multihash"
 	"github.com/sirupsen/logrus"
 )
@@ -161,7 +164,9 @@ func (p2p *P2P) AnnounceConnect() {
 func setupHost(ctx context.Context) (host.Host, *dht.IpfsDHT) {
 	// Set up the host identity options
 	prvkey, _, err := crypto.GenerateKeyPairWithReader(crypto.RSA, 2048, rand.Reader)
+
 	identity := libp2p.Identity(prvkey)
+
 	// Handle any potential error
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -173,9 +178,14 @@ func setupHost(ctx context.Context) (host.Host, *dht.IpfsDHT) {
 	logrus.Traceln("Generated P2P Identity Configuration.")
 
 	// Set up TLS secured TCP transport and options
-	tlstransport, err := tls.New(prvkey)
-	security := libp2p.Security(tls.ID, tlstransport)
-	transport := libp2p.Transport(tcp.NewTCPTransport)
+	security := libp2p.Security(tls.ID, tls.New)
+
+	transports := libp2p.ChainOptions(
+		libp2p.Transport(tcp.NewTCPTransport),
+		libp2p.Transport(libp2pquic.NewTransport),
+	)
+
+	// transport := libp2p.Transport(tcp.NewTCPTransport,libp2pquic.NewTransport)
 	// Handle any potential error
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -187,21 +197,18 @@ func setupHost(ctx context.Context) (host.Host, *dht.IpfsDHT) {
 	logrus.Traceln("Generated P2P Security and Transport Configurations.")
 
 	// Set up host listener address options
-	muladdr, err := multiaddr.NewMultiaddr("/ip4/0.0.0.0/tcp/0")
-	listen := libp2p.ListenAddrs(muladdr)
-	// Handle any potential error
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"error": err.Error(),
-		}).Fatalln("Failed to Generate P2P Address Listener Configuration!")
-	}
+	ip6quic := fmt.Sprintf("/ip6/::/udp/%d/quic", 4001)
+	ip4quic := fmt.Sprintf("/ip4/0.0.0.0/udp/%d/quic", 4001)
 
-	// Trace log
-	logrus.Traceln("Generated P2P Address Listener Configuration.")
+	ip6tcp := fmt.Sprintf("/ip6/::/tcp/%d", 4001)
+	ip4tcp := fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", 4001)
+	listen := libp2p.ListenAddrStrings(ip6quic, ip4quic, ip6tcp, ip4tcp)
 
 	// Set up the stream multiplexer and connection manager options
-	muxer := libp2p.Muxer("/yamux/1.0.0", yamux.DefaultTransport)
-	conn := libp2p.ConnectionManager(connmgr.NewConnManager(100, 400, time.Minute))
+	muxers := libp2p.ChainOptions(
+		libp2p.Muxer("/yamux/1.0.0", yamux.DefaultTransport),
+		libp2p.Muxer("/mplex/6.7.0", mplex.DefaultTransport),
+	)
 
 	// Trace log
 	logrus.Traceln("Generated P2P Stream Multiplexer, Connection Manager Configurations.")
@@ -217,17 +224,18 @@ func setupHost(ctx context.Context) (host.Host, *dht.IpfsDHT) {
 	var kaddht *dht.IpfsDHT
 	// Setup a routing configuration with the KadDHT
 	routing := libp2p.Routing(func(h host.Host) (routing.PeerRouting, error) {
-		kaddht = setupKadDHT(ctx, h)
+		// kaddht = setupKadDHT(ctx, h)
+		kaddht, err = dht.New(ctx, h)
 		return kaddht, err
 	})
 
 	// Trace log
 	logrus.Traceln("Generated P2P Routing Configurations.")
 
-	opts := libp2p.ChainOptions(identity, listen, security, transport, muxer, conn, nat, routing, relay)
+	opts := libp2p.ChainOptions(identity, listen, security, transports, muxers, nat, routing, relay)
 
 	// Construct a new libP2P host with the created options
-	libhost, err := libp2p.New(ctx, opts)
+	libhost, err := libp2p.New(opts)
 	// Handle any potential error
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
