@@ -1,13 +1,15 @@
 package main
 
 import (
-	"github.com/manishmeganathan/peerchat/src"
+	"peerchat/p2p"
 	"github.com/sirupsen/logrus"
 )
 
 func main() {
 	// Create a new P2PHost
-	p2phost := src.NewP2P()
-	logrus.Infoln(p2phost.Host.Addrs())
-	logrus.Infoln(p2phost.Host.ID())
+	h := p2p.NewP2P()
+	for _, add := range h.Host.Addrs(){
+		logrus.Infoln(add)
+	}
+	logrus.Infoln(h.Host.ID())
 }

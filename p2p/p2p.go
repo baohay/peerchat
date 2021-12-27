@@ -1,4 +1,4 @@
-package src
+package p2p
 
 import (
 	"context"
@@ -23,7 +23,7 @@ import (
 	yamux "github.com/libp2p/go-libp2p-yamux"
 	libp2pquic "github.com/libp2p/go-libp2p-quic-transport"
 
-	"github.com/libp2p/go-tcp-transport"
+	// "github.com/libp2p/go-tcp-transport"
 	"github.com/mr-tron/base58/base58"
 	"github.com/multiformats/go-multihash"
 	"github.com/sirupsen/logrus"
@@ -125,11 +125,6 @@ func (p2p *P2P) AdvertiseConnect() {
 	logrus.Traceln("Started Peer Connection Handler.")
 }
 
-// A method of P2P to connect to service peers.
-// This method uses the Provide() functionality of the Kademlia DHT directly to announce
-// the ability to provide the service and then disovers all peers that provide the same.
-// The peer discovery is handled by a go-routine that will read from a channel
-// of peer address information until the peer channel closes
 func (p2p *P2P) AnnounceConnect() {
 	// Generate the Service CID
 	cidvalue := generateCID(service)
@@ -181,7 +176,7 @@ func setupHost(ctx context.Context) (host.Host, *dht.IpfsDHT) {
 	security := libp2p.Security(tls.ID, tls.New)
 
 	transports := libp2p.ChainOptions(
-		libp2p.Transport(tcp.NewTCPTransport),
+		// libp2p.Transport(tcp.NewTCPTransport),
 		libp2p.Transport(libp2pquic.NewTransport),
 	)
 
@@ -198,11 +193,12 @@ func setupHost(ctx context.Context) (host.Host, *dht.IpfsDHT) {
 
 	// Set up host listener address options
 	ip6quic := fmt.Sprintf("/ip6/::/udp/%d/quic", 4001)
-	ip4quic := fmt.Sprintf("/ip4/0.0.0.0/udp/%d/quic", 4001)
+	// ip4quic := fmt.Sprintf("/ip4/0.0.0.0/udp/%d/quic", 4001)
 
-	ip6tcp := fmt.Sprintf("/ip6/::/tcp/%d", 4001)
-	ip4tcp := fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", 4001)
-	listen := libp2p.ListenAddrStrings(ip6quic, ip4quic, ip6tcp, ip4tcp)
+	// ip6tcp := fmt.Sprintf("/ip6/::/tcp/%d", 4001)
+	// ip4tcp := fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", 4001)
+	// listen := libp2p.ListenAddrStrings(ip6quic, ip4quic, ip6tcp, ip4tcp)
+	listen := libp2p.ListenAddrStrings(ip6quic)
 
 	// Set up the stream multiplexer and connection manager options
 	muxers := libp2p.ChainOptions(
